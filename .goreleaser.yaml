@@ -23,6 +23,7 @@ dockers:
       - go.mod
       - go.sum
       - cmd/cleaner/main.go
+      - internal/
     build_flag_templates:
       - --pull
       - --platform=linux/amd64
@@ -42,6 +43,7 @@ dockers:
       - go.mod
       - go.sum
       - cmd/cleaner/main.go
+      - internal/
     goarch: arm64
     build_flag_templates:
       - --pull
