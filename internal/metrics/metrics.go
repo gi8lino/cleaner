@@ -5,38 +5,48 @@ import (
 	"fmt"
 
 	"github.com/gi8lino/cleaner/internal/flags"
-
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/push"
 )
 
-// PushMetrics registers two Gauges and pushes them via the prometheus/push package.
-func PushMetrics(ctx context.Context, cfg *flags.Config, deleted int64, failed bool) error {
-	// create gauges
-	Failed := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: fmt.Sprintf("%s_cronjob_failed", cfg.Job),
-		Help: "Whether the last cronjob run failed (1 == failed)",
+// PushMetrics pushes two gauges to the Prometheus Pushgateway:
+func PushMetrics(ctx context.Context, cfg *flags.Config, deletedCount int64, failed bool) error {
+	// Gauge for number of deleted directories in this run
+	deletedDirsGauge := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: fmt.Sprintf("cleaner_%s_deleted_dirs", cfg.Job),
+		Help: "Number of empty directories deleted by this run",
 	})
-	Deleted := prometheus.NewGauge(prometheus.GaugeOpts{
-		Name: fmt.Sprintf("%s_deleted_dirs", cfg.Job),
-		Help: "Number of empty directories deleted",
+
+	// Gauge to indicate if this run failed (1 = failed, 0 = success)
+	failedGauge := prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: fmt.Sprintf("cleaner_%s_failed", cfg.Job),
+		Help: "Whether the last run failed (1 = failed, 0 = success)",
 	})
-	// set values
-	if failed {
-		Failed.Set(1)
-	} else {
-		Failed.Set(0)
-	}
-	Deleted.Set(float64(deleted))
 
-	// prepare pusher
-	p := push.New(cfg.PushGateway, cfg.Job).
-		Collector(Failed).
-		Collector(Deleted)
-	// add all grouping labels
-	for k, v := range cfg.Labels {
-		p = p.Grouping(k, v)
+	// Set gauge values
+	deletedDirsGauge.Set(float64(deletedCount))
+	failedGauge.Set(boolToFloat(failed))
+
+	// Build Pushgateway pusher
+	pusher := push.New(cfg.PushGateway, cfg.Job).
+		Collector(deletedDirsGauge).
+		Collector(failedGauge)
+
+	// Add grouping labels
+	for key, val := range cfg.Labels {
+		pusher = pusher.Grouping(key, val)
 	}
 
-	return p.AddContext(ctx)
+	// Push to Pushgateway (honors ctx for cancellation/timeouts)
+	return pusher.AddContext(ctx)
+}
+
+// boolToFloat converts a bool to a float64
+// True = 0, False = 1
+func boolToFloat(b bool) float64 {
+	if !b {
+		return 1
+	}
+
+	return 0
 }
